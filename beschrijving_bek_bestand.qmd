@@ -1,0 +1,685 @@
+---
+subtitle: "Beschrijving Bekostigingsbestand"
+format: 
+  html:
+    embed-resources: true
+    number-sections: true
+    toc: true
+    toc-title: "Inhoud"
+    toc-location: left
+    execute:
+      echo: false
+      warning: false
+      message: false
+crossref:
+  fig-title: Afbeelding
+  fig-prefix: Afbeelding
+  tbl-title: Tabel
+  tbl-prefix: Tabel
+---
+
+```{r keuzes}
+pad_naar_bekbestand <- here::here("data", "VLPBEK_2025_20240115_99XX.csv")
+
+# eventuele keuze voor kleuren en labels kunnen hier aangepast worden
+# weergegeven zijn de default instellingen
+
+keuze_color_brin_own <- "#853887"          # R-Ladies paars
+keuze_color_other_he <- "#246ABE"          # R blauw
+keuze_color_brin_own_other_he <- "#00B17E" # NPuls / CEDA groen
+keuze_color_outside_he <- "grey"           # gewoon grijs
+keuze_label_brin_own <- "this HEI"      # bijvoorbeeld de naam van de eigen instelling this HEI
+keuze_label_other_he <- "other HE"     # bijvoorbeeld "ander HOI"
+keuze_label_outside_he <- "outside HE"  # bijvoorbeeld  "niet in ho"
+
+```
+
+```{r bewerking}
+# benodigde packages -----------------------------------------------------------
+
+library(tidyverse)
+library(wisselstroom)
+library(gt)
+library(patchwork)
+# library(janitor) # wordt gebruikt om totalen te bepalen
+
+
+# informatie in de bestandsnaam ------------------------------------------------
+
+bestandsnaam <- str_sub(pad_naar_bekbestand,
+                        start = str_locate(pad_naar_bekbestand, "BEK_")[1] - 3,
+                        end = -1)
+bek_type <- str_sub(bestandsnaam, 1, 6)
+bek_type_omschrijving <- case_when(bek_type == "DEFBEK" ~ "betreft definitieve bekostiging",
+                                   bek_type == "VLPBEK" ~ "betreft voorlopige bekostiging",
+                                   TRUE ~ "bestandsnaam is anders dan verwacht")
+bek_bekjaar <- str_sub(bestandsnaam, 8, 11)
+bek_datum <- str_sub(bestandsnaam, 13, 20)
+brin_own <- str_sub(bestandsnaam, -8,-5)
+
+
+# wisselstroom objecten maken --------------------------------------------------
+
+bek_data <- read_bek_data(pad_naar_bekbestand)
+bek_basics <- make_flow_basics(bek_data)
+bek_insights <- make_flow_insights(bek_basics)
+
+```
+
+---
+title: " `r bestandsnaam`"
+---
+
+```{r colorize}
+# colorize text: use inline as `r colorize(text, color)` to print `text` in a given `color`
+# can also be used to color a color name, as in r colorize("red")`
+colorize <- function(text, color) {
+  if (missing(color)) color <- text
+  if (knitr::is_latex_output()) {
+    sprintf("\\textcolor{%s}{%s}", color, text)
+  } else if (knitr::is_html_output()) {
+    sprintf("<span style='color: %s;'>%s</span>", color, text)
+  } else text
+}
+```
+
+
+# Inleiding
+
+Dit document beschrijft de inhoud van het bekostigingsbestand "`r bestandsnaam`".  
+DUO omschrijft dit als een analysebestand voor één instelling, in dit geval voor `r brin_own`, `r keuze_label_brin_own`.
+
+In het *Programma van Eisen Elektronische gegevensuitwisseling tussen HO-instellingen en de Dienst Uitvoering Onderwijs* geeft DUO aan:  
+
+-  Dit analysebestand bevat van alle inschrijvingen (deelnames) en graden (resultaten) die van belang zijn voor het betrokken bekostigingsjaar het resultaat van de bepaling van de bekostigingstatus met de daarbij horende grondslag.
+-  Het doel van dit bestand is om gedetailleerd inzicht te geven in welke deelnames en resultaten worden bekostigd en indien ze niet worden bekostigd, waarom niet. Het analysebestand kan gebruikt worden voor analysedoeleinden.
+
+Wij analyseren dit bestand met het doel inzicht te krijgen in wisselstroom en stapelstroom. 
+
+## Rapportage keuzes
+
+Dit is een gegenereerd bestand, op basis van een aantal keuzes:  
+
+-  het bekostigingsbestand `r bestandsnaam` 
+-  de eigen BRIN wordt weergegeven met label **`r colorize(keuze_label_brin_own, keuze_color_brin_own)`**
+-  andere hoger onderwijs instellingen met label **`r colorize(keuze_label_other_he, keuze_color_other_he)`**
+
+## Betekenis bestandsnaam
+
+Naast de inhoud, bevat de **naam** van het bestand ("`r bestandsnaam`") ook informatie: 
+
+-  `r bek_type`: `r bek_type_omschrijving`
+-  `r bek_bekjaar`: het bekostigingsjaar
+-  `r bek_datum`: aanmaakdatum van het bestand in yyyymmdd
+-  `r brin_own`: de brin van de instelling waarvoor dit bestand is gemaakt
+
+
+## Globale inhoud
+
+
+```{r}
+
+bek_jaren <- bek_basics$enrolments |>
+  distinct(academic_year) |>
+  arrange(academic_year) |>
+  mutate(jaren = paste(academic_year, lead(academic_year), sep = " en ")) |>
+  head(1) |>
+  pull(jaren)
+
+n_students_slr <- bek_data |>
+  filter(V1 == "SLR") |>
+  pull(V2)
+
+n_enrolments_slr <- bek_data |>
+  filter(V1 == "SLR") |>
+  pull(V3)
+
+n_degrees_slr <- bek_data |>
+  filter(V1 == "SLR") |>
+  pull(V4)
+
+Zinnen <- bek_insights$enrolments_degrees_compact |> 
+  group_by(academic_year) |>
+  summarise(studenten = n_distinct(student_id),
+            inschrijvingen = n()) |>
+  ungroup() |>
+  mutate(zin = paste(inschrijvingen, "inschrijvingen door", studenten, "studenten in", academic_year)) |>
+  pull(zin)
+
+```
+
+Dit bestand geeft informatie over deelnames en graden:  
+
+-  over de jaren `r bek_jaren`
+-  van `r n_students_slr` studenten die in minstens 1 van deze jaren een inschrijving hadden bij `r brin_own`
+-  en hun `r n_enrolments_slr` inschrijvingen in deze jaren, ook als dat bij een andere ho-instelling is
+-  en hun `r n_degrees_slr` behaalde graden, ook als dat bij een andere ho-instelling is
+
+
+## Bewerking
+
+Om tot de wissel- en stapelstroom inzichten te komen, is eerst het bekostigingsbestand uit elkaar getrokken zodat alle regels over inschrijvingen in een losse dataset komen, en alle regels over behaalde graden in een andere dataset. Niet alle velden zijn daarbij meegenomen, alleen die relevant zijn voor de inzichten. Hierbij wordt het academisch jaar bepaald door de inschrijfdatum of de datum waarop de graad is behaald. Deze losse  data sets zijn beschikbaar voor een eigen analyse.  
+
+Het komt voor dat studenten in hetzelfde academische jaar meerdere inschrijvingen hebben voor dezelfde combinatie brin / croho. Voor de wissel- en stapelstroom inzichten worden deze samengevat tot één regel waarvan de startdatum wordt gezien als de vroegste startdatum van onderliggende inschrijvingen, en de vertrekdatum als de laatste stopdatum van de onderliggende inschrijvingen. Soms is een onderliggende inschrijving voor een andere lesvorm (VT, DT, DU) dan een andere. Dit wordt dan samengevat door ze samen te nemen (bijvoorbeeld DT|DU). In het vervolg wordt met "inschrijving' deze samengevatte inschrijving  bedoeld. Bij dit bestand komt dat neer op:
+
+-  `r Zinnen[1]`
+-  `r Zinnen[2]`
+
+Voor elke inschrijving wordt bepaald wat voor soort stroom het betreft. Dit wordt behalve door deze inschrijving, ook door de andere inschrijvingen van deze student bepaald:  
+
+-  voor inschrijvingen in `r word(bek_jaren,1)` kan dat een stay, switch, stack, stop of special zijn,
+-  voor inschrijvingen in `r word(bek_jaren,3)` kan dat een start, stay, switch, stack of special zijn.
+
+
+# Globale stromen
+
+
+In @fig-brinflow worden de stromen studenten tussen de academische jaren gevisualiseerd. In @tbl-brinflows staan de aantallen. Dit is een weergave van alle inschrijvingen.
+
+```{r}
+# Helaas werkt transparantie niet goed met weergeven vanuit de code.
+# Daarom wordt het na het maken weggeschreven als png,
+# en wordt de png weer opgehaald
+
+ggsave(filename = "bek_brinflowwwwwww.png",
+       plot = plot_brinflows(bek_insights,
+                             color_brin_own = keuze_color_brin_own,
+                             color_other_he = keuze_color_other_he,
+                             color_brin_own_other_he = keuze_color_brin_own_other_he,
+                             color_outside_he = keuze_color_outside_he,
+                             label_brin_own = keuze_label_brin_own,
+                             label_other_he  = keuze_label_other_he,
+                             label_outside_he = keuze_label_outside_he,
+                             label_size = 8),
+       width = 5, height = 2)
+
+```
+
+![Globale stromen van studenten tussen de twee academische jaren. Links wordt het academische jaar `r word(bek_jaren,1)` weergegeven, rechts `r word(bek_jaren,3)`](bek_brinflowwwwwww.png){#fig-brinflow}
+
+```{r}
+#| label: tbl-brinflows
+#| tbl-cap: "Studentenstromen in het bekostigingsbestand"
+#| tbl-cap-location: top
+
+dBrinflows <- bek_insights$summary_situations_brin |>
+  rename(van = 1,
+         naar = 2) |>
+  mutate(van = case_when(van == "brin_own" ~ keuze_label_brin_own,
+                         van == "brin_own & other HE" ~ paste(keuze_label_brin_own, keuze_label_other_he, sep = " & "),
+                         van == "other HE" ~ keuze_label_other_he,
+                         van == "outside HE" ~ keuze_label_outside_he
+                         ),
+         naar = case_when(naar == "brin_own" ~ keuze_label_brin_own,
+                         naar == "brin_own & other HE" ~ paste(keuze_label_brin_own, keuze_label_other_he, sep = " & "),
+                         naar == "other HE" ~ keuze_label_other_he,
+                         naar == "outside HE" ~ keuze_label_outside_he
+                         ),
+         ) |>
+  pivot_wider(names_from = naar,
+              values_from = n_students) |>
+   janitor::adorn_totals(where = "row", name = "totaal") |>
+   janitor::adorn_totals(where = "col", name = "totaal")
+
+
+dBrinflows |>
+  gt::gt() |>
+  gt::sub_missing(missing_text = "-") |>
+  gt::cols_label(van = paste( "in", word(bek_jaren,1))) |>
+  gt::tab_spanner(label = paste( "in", word(bek_jaren,3)),
+                  columns = -1)
+  
+  
+
+```
+
+De focus in de verdere beschrijving ligt op hoe het vervolg is van de inschrijvingen bij `r keuze_label_brin_own` in `r word(bek_jaren,3)` in de overgang naar `r word(bek_jaren,1)`. 
+
+
+
+## Stay, switch, stack, stop of special
+
+```{r}
+dStroomKort <- bek_insights$enrolments_degrees_compact |>
+  filter(academic_year == min(academic_year),
+         BRIN == brin_own,
+         flow_direction == "flow_to") |>
+  count(stroom = flow, name = "aantal") |>
+  arrange(desc(aantal)) |>
+  mutate(deel = aantal/sum(aantal)) |>
+  janitor::adorn_totals(name = "totaal") |>
+  mutate(deel = scales::percent(deel, accuracy = 0.1))
+
+n_stud_own <- bek_insights$enrolments_degrees_compact |>
+  filter(academic_year == min(academic_year),
+         BRIN == brin_own,
+         flow_direction == "flow_to") |>
+  distinct(student_id) |> nrow()
+  
+n_inschr_own <- dStroomKort |> filter(stroom == "totaal") |> pull(aantal)
+
+p_switch_own <- dStroomKort |> filter(stroom == "switch") |> pull(deel)
+ 
+caption_ownflows <- paste0("Stromen van ",  keuze_label_brin_own, " in ", word(bek_jaren,1), " naar bestemming (niet per se naar ", keuze_label_brin_own, ") in ",  word(bek_jaren,3))
+
+```
+
+
+Na het jaar `r word(bek_jaren,1)` switcht `r p_switch_own` van de `r n_inschr_own` inschrijvingen van de `r n_stud_own` studenten van `r keuze_label_brin_own`, zie @tbl-ownflows .
+
+```{r}
+#| label: tbl-ownflows
+#| tbl-cap: !expr caption_ownflows
+#| tbl-cap-location: top
+
+dStroomKort |>
+  gt::gt() 
+  
+```
+
+
+## Wisselstromen
+
+```{r}
+dSwitch_lang <- bek_insights$enrolments_degrees_compact |>
+  filter(BRIN == brin_own,
+         flow == "switch",
+         flow_direction == "flow_to") |>
+  mutate(propedeuse = case_when(situation_degree == "D" ~ "met propedeuse",
+                                is.na(situation_degree) ~ "zonder propedeuse")) |>
+  count(academic_year, propedeuse, situations_brin_otheryear)  
+
+
+dSwitch <- dSwitch_lang|>
+  pivot_wider(names_from = situations_brin_otheryear,
+              values_from = n) |>
+  janitor::adorn_totals(where = "row", name = "totaal") |>
+   janitor::adorn_totals(where = "col", name = "totaal")
+
+
+n_switch <- dSwitch |> filter(academic_year == "totaal") |> pull(totaal)
+
+caption_tblswitch <- paste0("Switchende studentenstromen van ",  keuze_label_brin_own, " in ", word(bek_jaren,1), " naar bestemming (niet per se naar ", keuze_label_brin_own, ") in ",  word(bek_jaren,3))
+
+caption_figswitch <- paste0("Verdeling van switchstromen van ",  keuze_label_brin_own, " in ", word(bek_jaren,1), " over bestemming (niet per se naar ", keuze_label_brin_own, ") in ",  word(bek_jaren,3))
+
+```
+
+
+Van de `r n_switch ` switchende inschrijvingen van studenten van `r keuze_label_brin_own`, wordt in @tbl-switch weergegeven of dat binnen of buiten de eigen instelling is. Ook wordt onderscheid gemaakt tussen switch met en zonder propedeuse diploma.  
+
+```{r}
+#| label: tbl-switch
+#| tbl-cap: !expr caption_tblswitch
+#| tbl-cap-location: top
+#| 
+
+
+# Om er zeker van te zijn dat alle kolommen er zijn voordat we ze aanroepen, deze hulpfunctie
+# wordt ook gebruikt in stack tabel
+# Gevonden op https://www.statology.org/r-add-column-if-does-not-exist/
+
+add_cols <- function(df, cols) {
+  add <- cols[!cols %in% names(df)]
+  if(length(add) != 0) df[add] <- NA
+  return(df)
+}
+
+dSwitch |>
+  add_cols(cols = c("brin_own", "other HE", "brin_own & other HE"))|>
+  relocate(`other HE`, .before = totaal) |>
+  relocate(totaal, .after = -1) |>
+   gt::gt() |>
+  gt::sub_missing(missing_text = "-") |>
+  gt::cols_label(academic_year = paste( "na", word(bek_jaren,1)),
+                 brin_own = keuze_label_brin_own,
+                 `brin_own & other HE` = paste(keuze_label_brin_own, keuze_label_other_he, sep = " & "),
+                 `other HE` = keuze_label_other_he) |>
+  gt::tab_spanner(label = paste( "in", word(bek_jaren,3), "switch naar"),
+                  columns = c(-1,-2)) |>
+  gt::cols_width(
+    academic_year ~ pct(15),
+    propedeuse ~ pct(20),
+    brin_own ~ pct(10),
+    `brin_own & other HE` ~ pct(25),
+    `other HE` ~ pct(15),
+    totaal ~ pct(15)
+    
+  )
+
+```
+
+
+In @fig-switch staat de verdeling van de switchende stromen weergegeven. 
+
+```{r}
+#| label: fig-switch
+#| fig-width: 7
+#| fig-height: 1.5
+#| fig-cap: !expr caption_figswitch
+#| 
+
+bind_rows(
+dSwitch_lang, 
+dSwitch_lang |>
+  count(academic_year, situations_brin_otheryear, wt = n) |>
+  add_column(propedeuse = "totaal")
+) |>
+  add_count(academic_year,propedeuse, wt = n) |>
+  mutate(deel = n/nn,
+         perc = scales::percent(deel, accuracy = 1),
+         label = ifelse(deel > 0.1, perc, NA)) |>
+  mutate(propedeuse = factor(propedeuse,
+                             levels = c("met propedeuse", "zonder propedeuse", "totaal"))) |>
+ # mutate(naar = factor(naar,
+#                       levels = c("this HEI", "this HEI & other HEI", "other HEI"))) |>
+  ggplot(aes(x = deel,
+             label = label,
+             fill = fct_rev(situations_brin_otheryear),
+             y = fct_rev(propedeuse))) +
+  geom_col() +
+  geom_text(position = position_stack(vjust = 0.5),
+            color = "white",
+            fontace = "bold") +
+  scale_fill_manual(values = c(`other HE` = keuze_color_other_he,
+                               brin_own = keuze_color_brin_own,
+                               `brin_own & other HE` = keuze_color_brin_own_other_he),
+                    labels = c(`other HE` = keuze_label_other_he,
+                               brin_own = keuze_label_brin_own,
+                               `brin_own & other HE` = paste(keuze_label_brin_own, keuze_label_other_he, sep = " & ")
+                               ),
+                    guide = guide_legend(reverse = TRUE),
+                    name = "bestemming") +
+  #coord_cartesian(expand = FALSE) +
+  theme_void() +
+  theme(legend.position = "top",
+       # legend.justification = "right",
+        axis.text.y = element_text(hjust = 1))
+```
+
+
+
+
+```{r}
+dPropElders <- bek_insights$enrolments_degrees_compact |>
+  filter(BRIN == brin_own,
+         flow == "switch",
+         flow_direction == "flow_to",
+         str_detect(situations_brin_otheryear, "other HE"),
+         situation_degree == "D") |>
+  mutate(
+         hbowo = case_when(str_detect(all_enrolments_otheryear, "HBO-") & str_detect(all_enrolments_otheryear, "WO-") ~ "hbo & wo",
+                           str_detect(all_enrolments_otheryear, "HBO-") ~ "hbo",
+                           str_detect(all_enrolments_otheryear, "WO-") ~ "wo",
+                           TRUE ~ NA_character_)
+         ) |>
+count(academic_year,hbowo)  |>
+mutate(perc = scales::percent(n/sum(n), accuracy = 1))
+  
+n_propelders <- sum(dPropElders$n)
+
+perc_hbo <- dPropElders |> filter(hbowo == "hbo") |> pull(perc)
+perc_wo <- dPropElders |> filter(hbowo == "o") |> pull(perc)
+
+# als niemand naar hbo of wo gaat is dat een string met lengte 0, anders 1
+perc_hbo <- ifelse(length(perc_hbo) == 1,
+                   perc_hbo,
+                   "0%")
+perc_wo <- ifelse(length(perc_wo) == 1,
+                   perc_wo,
+                   "0%")
+```
+
+Van de `r n_propelders` inschrijvingen met een propedeuse die switchen naar een andere instelling, gaat `r perc_hbo` naar een instelling in het hbo en `r perc_wo` naar het wo.
+
+
+## Stapelstromen
+
+
+```{r}
+dStack_lang <- bek_insights$enrolments_degrees_compact |>
+  filter(BRIN == brin_own,
+         flow == "stack",
+         flow_direction == "flow_to") |>
+  count(academic_year, situation_degree, situations_brin_otheryear) 
+
+
+dStack <- dStack_lang|>
+  pivot_wider(names_from = situations_brin_otheryear,
+              values_from = n) |>
+  janitor::adorn_totals(where = "row", name = "totaal") |>
+   janitor::adorn_totals(where = "col", name = "totaal")
+
+
+n_stack <- dStack |> filter(academic_year == "totaal") |> pull(totaal)
+
+caption_tblstack <- paste0("Stapelende studentenstromen van ",  keuze_label_brin_own, " in ", word(bek_jaren,1), " naar bestemming (niet per se naar ", keuze_label_brin_own, ") in ",  word(bek_jaren,3))
+
+caption_figstack <- paste0("Verdeling van stapelende studentenstromen van ",  keuze_label_brin_own, " in ", word(bek_jaren,1), " over bestemming (niet per se naar ", keuze_label_brin_own, ") in ",  word(bek_jaren,3))
+
+```
+
+
+Na het behalen van een diploma bij `r keuze_label_brin_own` beginnen de studenten van `r n_stack` inschrijvingen  aan een andere studie. In @tbl-stack is de verdeling naar behaald diploma te zien in aantallen, en in @fig-stack in percentages. 
+
+```{r}
+#| label: tbl-stack
+#| tbl-cap: !expr caption_tblstack
+#| tbl-cap-location: top
+#| 
+
+dStack |>
+  add_cols(cols = c("brin_own", "other HE", "brin_own & other HE"))|>
+  relocate(`other HE`, .before = totaal) |>
+  relocate(totaal, .after = -1) |>
+  gt::gt() |>
+  gt::sub_missing(missing_text = "-") |>
+  gt::cols_label(academic_year = paste( "na", word(bek_jaren,1)),
+                 situation_degree = "na het behalen van diploma",
+                 brin_own = keuze_label_brin_own,
+                 `brin_own & other HE` = paste(keuze_label_brin_own, keuze_label_other_he, sep = " & "),
+                 `other HE` = keuze_label_other_he) |>
+  gt::tab_spanner(label = paste( "in", word(bek_jaren,3), "stapelen bij"),
+                  columns = c(-1,-2)) |>
+  gt::cols_width(
+    academic_year ~ pct(15),
+    situation_degree ~ pct(25),
+    brin_own ~ pct(10),
+    `brin_own & other HE` ~ pct(25),
+    `other HE` ~ pct(15),
+    totaal ~ pct(10)
+  ) |>
+  gt::tab_footnote(
+    footnote = "A = Associate Degree, B = Bachelor, DB = Propedeuse & Bachelor, M = Master",
+    locations = cells_column_labels(columns = situation_degree)
+  ) |>
+  gt::tab_options(footnotes.font.size = 8)
+```
+
+
+```{r}
+#| label: fig-stack
+#| fig-width: 7
+#| fig-height: 1.5
+#| fig-cap: !expr caption_figswitch
+#| 
+
+bind_rows(
+dStack_lang, 
+dStack_lang |>
+  count(academic_year, situations_brin_otheryear, wt = n) |>
+  add_column(situation_degree = "totaal")
+) |>
+  add_count(academic_year,situation_degree, wt = n) |>
+  mutate(deel = n/nn,
+         perc = scales::percent(deel, accuracy = 1),
+         label = ifelse(deel > 0.1, perc, NA)) |>
+ mutate(situation_degree = factor(situation_degree,
+                             levels = c("A", "B", "DB", "M", "totaal"))) |>
+ # mutate(naar = factor(naar,
+#                       levels = c("this HEI", "this HEI & other HEI", "other HEI"))) |>
+  ggplot(aes(x = deel,
+             label = label,
+             fill = fct_rev(situations_brin_otheryear),
+             y = fct_rev(situation_degree))) +
+  geom_col() +
+  geom_text(position = position_stack(vjust = 0.5),
+            color = "white",
+            fontace = "bold") +
+  scale_fill_manual(values = c(`other HE` = keuze_color_other_he,
+                               brin_own = keuze_color_brin_own,
+                               `brin_own & other HE` = keuze_color_brin_own_other_he),
+                    labels = c(`other HE` = keuze_label_other_he,
+                               brin_own = keuze_label_brin_own,
+                               `brin_own & other HE` = paste(keuze_label_brin_own, keuze_label_other_he, sep = " & ")
+                               ),
+                    guide = guide_legend(reverse = TRUE),
+                    name = "bestemming") +
+  #coord_cartesian(expand = FALSE) +
+  theme_void() +
+  theme(legend.position = "top",
+       # legend.justification = "right",
+        axis.text.y = element_text(hjust = 1))
+```
+
+
+```{r}
+dDipElders <- 
+  bek_insights$enrolments_degrees_compact |>
+  filter(BRIN == brin_own,
+         flow == "stack",
+         flow_direction == "flow_to",
+         str_detect(situations_brin_otheryear, "other HE")) |>
+  mutate(
+         hbowo = case_when(str_detect(all_enrolments_otheryear, "HBO-") & str_detect(all_enrolments_otheryear, "WO-") ~ "hbo & wo",
+                           str_detect(all_enrolments_otheryear, "HBO-") ~ "hbo",
+                           str_detect(all_enrolments_otheryear, "WO-") ~ "wo",
+                           TRUE ~ NA)
+         ) |>
+count(academic_year, situation_degree , hbowo)  |>
+add_count(situation_degree, wt = n) |>
+mutate(perc = scales::percent(n/nn, accuracy = 1)) |>
+mutate(zindeel = paste("gaat", perc, "naar het", hbowo)) |>
+group_by(situation_degree) |>
+  summarise(zin = paste("Van de ", max(nn), " inschrijvingen met een", situation_degree, "diploma, die aan een andere instelling gaan doorstuderen,"),
+            vervolg = paste(zindeel, collapse = " en ")) |>
+  ungroup() |>
+  mutate(zin = paste(zin, vervolg)) |>
+  distinct(zin)
+
+bullet_list <- function(...) {
+  cat(paste0("- ", c(...), collapse = "\n"))
+  cat("\n")
+}
+
+  
+```
+
+
+
+```{r results="asis"}
+bullet_list(dDipElders |> pull(zin))
+```
+
+
+# Detail stromen
+
+```{r}
+caption_tblwisseldetail <- paste0("Wisselstromen van ",  keuze_label_brin_own, " in ", word(bek_jaren,1), " naar ",
+                                  word(bek_jaren,3), " met een minimale omvang van 10")
+caption_tblstapeldetail <- paste0("Stapelstromen van ",  keuze_label_brin_own, " in ", word(bek_jaren,1), " naar ",
+                                  word(bek_jaren,3), " met een minimale omvang van 10")
+
+```
+
+## Wisselstromen vanuit `r keuze_label_brin_own`
+
+@tbl-wisseldetail geeft de wissels weer die minstens 10 keer zijn voorgekomen. 
+
+```{r}
+#| label: tbl-wisseldetail
+#| tbl-cap: !expr caption_tblwisseldetail
+#| tbl-cap-location: top
+#| 
+bek_insights$switches |>
+  filter(from_brin == brin_own,
+         total_switch >= 10) |>
+  select(from_academic_year, from_program, to_academic_year, to_enrolments, total_switch, with_prop) |>
+  gt::gt() |>
+  gt::sub_missing(missing_text = "-") |>
+  gt::cols_label(from_academic_year = "studiejaar",
+                 from_program = "opleiding",
+                 to_academic_year = "studiejaar",
+                 to_enrolments = "inschrijving",
+                 total_switch = "totaal switch",
+                 with_prop = "waarvan met propedeuse diploma"
+                ) |>
+  gt::tab_spanner(label = "van",
+                  columns = c(1,2)) |>
+    gt::tab_spanner(label = "naar",
+                  columns = c(3,4)) |>
+  gt::cols_width(
+    from_academic_year ~ pct(10),
+    from_program ~pct(10),
+    to_academic_year ~ pct(10),
+    to_enrolments ~ pct(30),
+    total_switch ~ pct(15),
+    with_prop ~ pct(25)
+  ) |>
+  gt::tab_options(footnotes.font.size = 8)
+```
+
+
+## Stapelstromen vanuit `r keuze_label_brin_own`
+
+@tbl-stapeldetail geeft de wissels weer die minstens 10 keer zijn voorgekomen. 
+
+```{r}
+#| label: tbl-stapeldetail
+#| tbl-cap: !expr caption_tblstapeldetail
+#| tbl-cap-location: top
+#| 
+bek_insights$stacks |>
+  filter(from_brin == brin_own,
+         total_stack >= 10) |>
+  select(from_academic_year, with_degree, from_program, to_academic_year, to_enrolments, total_stack) |>
+  gt::gt() |>
+  gt::sub_missing(missing_text = "-") |>
+  gt::cols_label(from_academic_year = "studiejaar",
+                 with_degree = "type",
+                 from_program = "opleiding",
+                 to_academic_year = "studiejaar",
+                 to_enrolments = "inschrijving",
+                 total_stack = "totaal stapelaars",
+                 ) |>
+  gt::tab_spanner(label = "van",
+                  columns = c(1,2,3)) |>
+    gt::tab_spanner(label = "naar",
+                  columns = c(4, 5)) |>
+  gt::cols_width(
+    from_academic_year ~ pct(10),
+    with_degree ~ pct(10),
+    from_program ~pct(10),
+    to_academic_year ~ pct(10),
+    to_enrolments ~ pct(35),
+    total_stack ~ pct(25)
+  ) |>
+  gt::tab_options(footnotes.font.size = 8)
+```
+
+
+
+
+
+# Colofon {-}
+
+Deze beschrijving is een via R-code gegenereerd rapport.  
+De code is opgesteld door Martine Jansen, institutional researcher bij Fontys Hogeschool. 
+
+## Sessie info {-} 
+
+```{r }
+sessionInfo()
+```
+
+
