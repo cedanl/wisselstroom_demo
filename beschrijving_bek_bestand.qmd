@@ -35,12 +35,21 @@ keuze_label_outside_he <- "outside HE"  # bijvoorbeeld  "niet in ho"
 ```
 
 ```{r bewerking}
-# benodigde packages -----------------------------------------------------------
+# benodigde packages installeren indien niet aanwezig --------------------------
+
+# in geval van ontbreken worden ze geinstalleerd
+RequiredPackages <- c("tidyverse","gt", "janitor", "devtools")
+for (i in RequiredPackages) { #Installs packages if not yet installed
+    if (!require(i, character.only = TRUE)) install.packages(i)
+}
+
+if(!require("wisselstroom", character.only = TRUE)) devtools::install_github("ed2c/wisselstroom", dependencies = TRUE, build_vignettes = TRUE)
+
+# benodigde packages activeren -------------------------------------------------
 
 library(tidyverse)
 library(wisselstroom)
 library(gt)
-library(patchwork)
 # library(janitor) # wordt gebruikt om totalen te bepalen
 
 
